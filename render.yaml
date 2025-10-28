@@ -7,5 +7,7 @@ services:
     buildCommand: npm ci && npx puppeteer browsers install chrome
     startCommand: node server.js
     envVars:
-      NODE_VERSION: 18
-      PUPPETEER_CACHE_DIR: /opt/render/.cache/puppeteer
+      - name: NODE_VERSION
+        value: "18"
+      - name: PUPPETEER_CACHE_DIR
+        value: /opt/render/.cache/puppeteer
