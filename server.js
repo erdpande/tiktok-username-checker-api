@@ -85,21 +85,3 @@ app.listen(PORT, () => {
   console.log(`Available at: https://tiktok-username-checker-api.onrender.com`);
 });
 
-
-{
-  "name": "tiktok-username-checker",
-  "version": "1.0.0",
-  "description": "Check if TikTok username is available using Puppeteer on Render",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer-core": "^22.0.0",
-    "chrome-aws-lambda": "^10.1.0"
-  },
-  "engines": {
-    "node": ">=18"
-  }
-}
