@@ -1,63 +1,104 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+app.use(express.json({ limit: '10mb' }));
 
-app.get('/', (req, res) => {
-  res.send(`
-    <h1>TikTok Username Checker</h1>
-    <p><code>/check?username=khaby_lame</code></p>
-  `);
-});
+let browser;
 
-app.get('/check', async (req, res) => {
-  const { username } = req.query;
+// Launch Puppeteer once at startup
+(async () => {
+  browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  console.log('Puppeteer browser launched');
+})();
 
-  if (!username || typeof username !== 'string' || username.trim() === '') {
+// Helper: Check one username
+async function checkUsername(username, page) {
+  try {
+    await page.goto(`https://www.tiktok.com/@${username}`, {
+      waitUntil: 'networkidle2',
+      timeout: 10000
+    });
+
+    const notFoundText = await page.evaluate(() => {
+      const p = Array.from(document.querySelectorAll('p')).find(el =>
+        el.innerText.toLowerCase().includes('couldn’t find this account') ||
+        el.innerText.toLowerCase().includes('this account doesn’t exist')
+      );
+      return p ? p.innerText : null;
+    });
+
+    return { username, available: !!notFoundText };
+  } catch (err) {
+    return { username, available: false, error: 'Rate limited or timeout' };
+  }
+}
+
+// === SINGLE CHECK ===
+app.post('/check', async (req, res) => {
+  const { username } = req.body;
+  if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: 'Invalid username' });
   }
 
-  const cleanUsername = username.trim().toLowerCase();
-
-  let browser = null;
-
   try {
-    console.log('Launching browser...');
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
-    });
-
     const page = await browser.newPage();
-    console.log('Navigating to TikTok...');
-    await page.goto(`https://www.tiktok.com/@${cleanUsername}`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000,
-    });
-
-    const userExists = await page.evaluate(() => {
-      return !document.querySelector('div[data-e2e="user-not-found"]');
-    });
-
-    await browser.close();
-    console.log('Check complete:', { username, available: !userExists });
-
-    res.json({ available: !userExists });
-
-  } catch (error) {
-    console.error('PUPPETEER LAUNCH FAILED:', error.message);
-    console.error('STACK:', error.stack);
-    if (browser) await browser.close().catch(() => {});
-    res.status(500).json({ error: 'Failed to check username' });
+    const result = await Promise.race([
+      checkUsername(username.trim(), page),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000))
+    ]);
+    await page.close();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
+// === BULK CHECK (up to 100) ===
+app.post('/bulk-check', async (req, res) => {
+  let { usernames } = req.body;
+  if (!Array.isArray(usernames) || usernames.length === 0) {
+    return res.status(400).json({ error: 'Send array of usernames' });
+  }
+
+  usernames = usernames.slice(0, 100).map(u => u.toString().trim()).filter(Boolean);
+  if (usernames.length === 0) {
+    return res.status(400).json({ error: 'No valid usernames' });
+  }
+
+  try {
+    const page = await browser.newPage();
+    const results = [];
+
+    for (const username of usernames) {
+      const result = await Promise.race([
+        checkUsername(username, page),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000))
+      ]);
+      results.push(result);
+      await new Promise(r => setTimeout(r, 300)); // Delay to avoid detection
+    }
+
+    await page.close();
+    res.json({ count: results.length, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Health check
+app.get('/', (req, res) => {
+  res.json({ status: 'TikTok Username Checker API Live', endpoints: ['/check', '/bulk-check'] });
+});
+
+app.get('/healthz', (req, res) => res.send('OK'));
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
-  console.log(`Live: https://tiktok-username-checker-api.onrender.com`);
 });
