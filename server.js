@@ -1,58 +1,23 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
+const puppeteer = require('puppeteer-core');
+const chromium = require('chrome-aws-lambda');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// === ENSURE CACHE DIRECTORY EXISTS AT RUNTIME ===
-const CACHE_DIR = '/opt/render/.cache/puppeteer';
-if (!fs.existsSync(CACHE_DIR)) {
-  console.log('Creating cache directory at runtime:', CACHE_DIR);
-  require('child_process').execSync(`mkdir -p ${CACHE_DIR}`);
-}
+// === HEALTH CHECK ===
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>TikTok Username Checker API</h1>
+    <p><strong>Usage:</strong> <code>GET /check?username=khaby_lame</code></p>
+    <p><a href="/check?username=khaby_lame">Test: khaby_lame (taken)</a></p>
+    <p><a href="/check?username=nonexistentuser1234567890">Test: available</a></p>
+    <hr>
+    <p><em>Powered by chrome-aws-lambda + puppeteer-core | No cache issues</em></p>
+  `);
+});
 
-// === DYNAMIC CHROME PATH FINDER (RENDER-OPTIMIZED) ===
-async function getChromePath() {
-  const cacheDir = process.env.PUPPETEER_CACHE_DIR || '/opt/render/.cache/puppeteer';
-  console.log('PUPPETEER_CACHE_DIR:', cacheDir);
-
-  if (!fs.existsSync(cacheDir)) {
-  console.log('Cache directory missing:', cacheDir);
-  return null;
-}
-
-  const chromeBase = path.join(cacheDir, 'chrome');
-  if (!fs.existsSync(chromeBase)) {
-    console.log('Chrome base missing:', chromeBase);
-    return null;
-  }
-
-  try {
-    const versions = fs.readdirSync(chromeBase);
-    console.log('Chrome versions:', versions);
-
-    for (const ver of versions) {
-      const chromePath = path.join(chromeBase, ver, 'chrome-linux64', 'chrome');
-      console.log('Checking:', chromePath);
-      if (fs.existsSync(chromePath)) {
-        const stats = fs.statSync(chromePath);
-        if (stats.isFile() && (stats.mode & 0o111)) {
-          console.log('CHROME FOUND:', chromePath);
-          return chromePath;
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Scan error:', err.message);
-  }
-
-  console.log('Chrome not found');
-  return null;
-}
-
-// === MAIN API ROUTE ===
+// === MAIN CHECK ROUTE ===
 app.get('/check', async (req, res) => {
   const { username } = req.query;
 
@@ -63,48 +28,35 @@ app.get('/check', async (req, res) => {
 
   const cleanUsername = username.trim().toLowerCase();
 
-  // Find Chrome
-  const chromePath = await getChromePath();
-  if (!chromePath) {
-    return res.status(500).json({ error: 'Browser not available' });
-  }
+  let browser = null;
 
-  let browser;
   try {
+    // Launch browser using bundled Chrome
     browser = await puppeteer.launch({
-      headless: true,
-      executablePath: chromePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
-        '--disable-extensions',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding'
-      ],
-      timeout: 30000
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
 
-    // Block images, CSS, fonts
+    // Block images, CSS, fonts to speed up
     await page.setRequestInterception(true);
     page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+      const resourceType = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();
       }
     });
 
-    // Go to TikTok profile
+    // Navigate to TikTok profile
     await page.goto(`https://www.tiktok.com/@${cleanUsername}`, {
       waitUntil: 'domcontentloaded',
-      timeout: 15000
+      timeout: 15000,
     });
 
     // Check if user exists
@@ -117,25 +69,13 @@ app.get('/check', async (req, res) => {
 
     res.json({ available: !userExists });
 
-  } catch (err) {
+  } catch (error) {
     if (browser) {
       try { await browser.close(); } catch (e) {}
     }
-    console.error('Puppeteer error:', err.message);
+    console.error('Puppeteer error:', error.message);
     res.status(500).json({ error: 'Failed to check username' });
   }
-});
-
-// === ROOT / HEALTH CHECK ===
-app.get('/', (req, res) => {
-  res.send(`
-    <h1>TikTok Username Checker API</h1>
-    <p><strong>Usage:</strong> <code>GET /check?username=khaby_lame</code></p>
-    <p><a href="/check?username=khaby_lame">Test: khaby_lame (taken)</a></p>
-    <p><a href="/check?username=nonexistentuser1234567890">Test: available</a></p>
-    <hr>
-    <p><em>Built for Render.com | Puppeteer + Express</em></p>
-  `);
 });
 
 // === START SERVER ===
@@ -144,3 +84,22 @@ app.listen(PORT, () => {
   console.log(`Your service is live!`);
   console.log(`Available at: https://tiktok-username-checker-api.onrender.com`);
 });
+
+
+{
+  "name": "tiktok-username-checker",
+  "version": "1.0.0",
+  "description": "Check if TikTok username is available using Puppeteer on Render",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer-core": "^22.0.0",
+    "chrome-aws-lambda": "^10.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
