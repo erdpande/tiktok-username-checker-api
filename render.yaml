@@ -6,8 +6,3 @@ services:
     plan: free
     buildCommand: npm ci && npx puppeteer browsers install chrome
     startCommand: node server.js
-    envVars:
-      - name: NODE_VERSION
-        value: "18"
-      - name: PUPPETEER_CACHE_DIR
-        value: /opt/render/.cache/puppeteer
