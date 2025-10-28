@@ -6,43 +6,49 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// === DYNAMIC CHROME PATH FINDER (RENDER-COMPATIBLE) ===
+// === ENSURE CACHE DIRECTORY EXISTS AT RUNTIME ===
+const CACHE_DIR = '/opt/render/.cache/puppeteer';
+if (!fs.existsSync(CACHE_DIR)) {
+  console.log('Creating cache directory at runtime:', CACHE_DIR);
+  require('child_process').execSync(`mkdir -p ${CACHE_DIR}`);
+}
+
+// === DYNAMIC CHROME PATH FINDER (RENDER-OPTIMIZED) ===
 async function getChromePath() {
   const cacheDir = process.env.PUPPETEER_CACHE_DIR || '/opt/render/.cache/puppeteer';
   console.log('PUPPETEER_CACHE_DIR:', cacheDir);
 
   if (!fs.existsSync(cacheDir)) {
-    console.log('Cache directory does not exist:', cacheDir);
-    return null;
-  }
+  console.log('Cache directory missing:', cacheDir);
+  return null;
+}
 
   const chromeBase = path.join(cacheDir, 'chrome');
   if (!fs.existsSync(chromeBase)) {
-    console.log('Chrome base directory missing:', chromeBase);
+    console.log('Chrome base missing:', chromeBase);
     return null;
   }
 
   try {
     const versions = fs.readdirSync(chromeBase);
-    console.log('Chrome versions found:', versions);
+    console.log('Chrome versions:', versions);
 
     for (const ver of versions) {
       const chromePath = path.join(chromeBase, ver, 'chrome-linux64', 'chrome');
-      console.log('Checking Chrome binary:', chromePath);
-
+      console.log('Checking:', chromePath);
       if (fs.existsSync(chromePath)) {
         const stats = fs.statSync(chromePath);
         if (stats.isFile() && (stats.mode & 0o111)) {
-          console.log('CHROME FOUND & EXECUTABLE:', chromePath);
+          console.log('CHROME FOUND:', chromePath);
           return chromePath;
         }
       }
     }
   } catch (err) {
-    console.error('Error scanning Chrome directory:', err.message);
+    console.error('Scan error:', err.message);
   }
 
-  console.log('No valid Chrome binary found');
+  console.log('Chrome not found');
   return null;
 }
 
@@ -84,7 +90,7 @@ app.get('/check', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Block unnecessary resources
+    // Block images, CSS, fonts
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
@@ -95,7 +101,7 @@ app.get('/check', async (req, res) => {
       }
     });
 
-    // Navigate to TikTok profile
+    // Go to TikTok profile
     await page.goto(`https://www.tiktok.com/@${cleanUsername}`, {
       waitUntil: 'domcontentloaded',
       timeout: 15000
