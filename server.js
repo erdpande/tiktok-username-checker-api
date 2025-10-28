@@ -1,5 +1,6 @@
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
+const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome';
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
@@ -37,6 +38,7 @@ app.post('/check', async (req, res) => {
 
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
   const page = await browser.newPage();
@@ -60,6 +62,7 @@ app.post('/bulk-check', async (req, res) => {
 
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
