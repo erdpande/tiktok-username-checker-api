@@ -4,5 +4,9 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm ci && npx puppeteer browsers install chrome
+    buildCommand: npm ci
     startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
