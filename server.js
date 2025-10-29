@@ -1,7 +1,6 @@
 const express = require('express');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -11,8 +10,9 @@ let browser;
 // Launch Puppeteer once at startup
 (async () => {
   browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
+    args: chromium.args,
   });
   console.log('Puppeteer browser launched');
 })();
@@ -22,7 +22,7 @@ async function checkUsername(username, page) {
   try {
     await page.goto(`https://www.tiktok.com/@${username}`, {
       waitUntil: 'networkidle2',
-      timeout: 10000
+      timeout: 10000,
     });
 
     const notFoundText = await page.evaluate(() => {
@@ -50,7 +50,7 @@ app.post('/check', async (req, res) => {
     const page = await browser.newPage();
     const result = await Promise.race([
       checkUsername(username.trim(), page),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000)),
     ]);
     await page.close();
     res.json(result);
@@ -78,7 +78,7 @@ app.post('/bulk-check', async (req, res) => {
     for (const username of usernames) {
       const result = await Promise.race([
         checkUsername(username, page),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 23000)),
       ]);
       results.push(result);
       await new Promise(r => setTimeout(r, 300)); // Delay to avoid detection
