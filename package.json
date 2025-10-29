@@ -1,7 +1,7 @@
 {
   "name": "tiktok-username-checker",
   "version": "1.0.0",
-  "description": "TikTok Username Checker using chrome-aws-lambda",
+  "description": "TikTok Username Checker using puppeteer-core and @sparticuz/chromium",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
